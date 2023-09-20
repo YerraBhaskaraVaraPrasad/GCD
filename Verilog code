@@ -1,0 +1,251 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: YERRA BHASKARA VARA PRASAD
+// 
+// Create Date: 18.09.2023 13:58:13
+// Design Name: 
+// Module Name: top
+// Project Name: GCD
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+module top(clk,rst,go,a,b,done,cathode,anode);
+input clk,rst,go;
+input [6:0]a,b;
+wire [6:0]out;
+output done;
+output [7:0]anode,cathode;
+wire outclk;
+wire [2:0]ref;
+wire [3:0]a1,a0,b1,b0,o1,o0,digit;
+main dut1(clk,rst,go,a,b,done,out);
+dclk dut2(outclk);
+refresh_counter dut3(outclk,rst,ref);
+display_anode dut4(ref,a1,a0,b1,b0,o1,o0,anode);
+bcd_converter bcd(a,b,out,a1,a0,b1,b0,o1,o0);
+bcd_cntrl dut5(ref,a1,a0,b1,b0,o1,o0,digit);
+display_cathode dut6(digit,cathode);
+endmodule
+
+module main(clk,rst,go,a,b,done,out);
+input clk,rst,go;
+input [6:0]a,b;
+output [6:0]out;
+output done;
+wire altb,agtb,aeqb;
+wire a_sel,b_sel,a_load,b_load,out_load;
+control_path dut1(clk,rst,go,altb,agtb,aeqb,a_sel,b_sel,a_load,b_load,out_load,done);
+data_path dut2(clk,rst,a,b,a_sel,b_sel,a_load,b_load,out_load,altb,agtb,aeqb,out);
+endmodule
+
+module bcd_cntrl(ref,a1,a0,b1,b0,o1,o0,digit);
+input [3:0] a1,a0,b1,b0,o1,o0;
+input [2:0]ref;
+output reg [3:0] digit;
+
+always@*
+begin
+case(ref)
+0: digit=a1;
+1: digit=a0;
+2: digit=b1;
+3: digit=b0;
+4: digit=o1;
+5: digit=o0;
+default : digit=4'd0;
+endcase
+end
+endmodule
+
+module bcd_converter(a,b,out,a1,a0,b1,b0,o1,o0);
+input [6:0]a,b,out;
+output reg [3:0]a1,a0,b1,b0,o1,o0;
+always@* a1=a/10;
+always@* a0=a%10;
+always@* b1=b/10;
+always@* b0=b%10;
+always@* o1=out/10;
+always@* o0=out%10;
+endmodule
+
+module comparator(a,b,altb,agtb,aeqb);
+input [6:0]a,b;
+output reg altb,agtb,aeqb;
+always@*
+begin
+if(a>b) {agtb,altb,aeqb}=3'b100;
+else if(a<b) {agtb,altb,aeqb}=3'b010;
+else if (a==b) {agtb,altb,aeqb}=3'b001;
+else {agtb,altb,aeqb}=3'b000;
+end
+endmodule
+
+module control_path(clk,rst,go,altb,agtb,aeqb,a_sel,b_sel,a_load,b_load,out_load,done);
+input clk,rst,go,altb,agtb,aeqb;
+output reg a_sel,b_sel,a_load,b_load,out_load,done;
+
+parameter s0=3'b000;
+parameter s1=3'b001;
+parameter s2=3'b010;
+parameter s3=3'b011;
+parameter s4=3'b100;
+parameter s5=3'b101;
+parameter s6=3'b110;
+parameter s7=3'b111;
+
+reg [2:0]ps,ns;
+
+always@(posedge clk)
+begin
+if(rst) ps<=s0;
+else  ps<=ns;
+end
+
+always@(ps or go or agtb or altb or aeqb)
+begin
+case(ps)
+s0: if(go) ns=s1;
+else ns=s0;
+
+s1: ns=s2;
+s2: ns=s3;
+s3: if(altb) ns=s5;
+    else if(agtb) ns=s4;
+    else if(aeqb) ns=s6;
+    else ns=s3;
+s4: ns=s7;
+s5: ns=s7;
+s6: #200 ns=s0;
+s7: ns=s3;
+default: ns=s0;
+endcase
+end
+
+always@(ps or go)
+begin
+case(ps)
+s0: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b000000;
+s1: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b111100;
+s2: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b000000;
+s3: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b000000;
+s4: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b001000;
+s5: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b000100;
+s6: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b000011;
+s7: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b000000;
+default: {a_sel,b_sel,a_load,b_load,out_load,done}=6'b000000;
+endcase
+end
+endmodule
+
+module data_path(clk,rst,a,b,a_sel,b_sel,a_load,b_load,out_load,altb,agtb,aeqb,out);
+input clk,rst,a_sel,b_sel,a_load,b_load,out_load;
+output altb,agtb,aeqb;
+input [6:0]a,b;
+output [6:0]out;
+wire [6:0]ta,tb,a_in,b_in,a_out,b_out;
+subtractor s1(a_out,b_out,ta);
+subtractor s2(b_out,a_out,tb);
+mux m1(ta,a,a_sel,a_in);
+mux m2(tb,b,b_sel,b_in);
+register r1(clk,rst,a_load,a_in,a_out);
+register r2(clk,rst,b_load,b_in,b_out);
+register r3(clk,rst,out_load,a_out,out);
+comparator cm2(a_out,b_out,altb,agtb,aeqb);
+endmodule
+
+module dclk(outclk);
+output reg outclk;
+always #500000 outclk<=~outclk;
+initial outclk<=1'b1;
+endmodule
+module display_anode(ref,a1,a0,b1,b0,o1,o0,anode);
+input [3:0]a1,a0,b1,b0,o1,o0;
+output reg [7:0]anode;
+input [2:0]ref;
+
+always@*
+begin
+case(ref)
+0: anode=8'b01111111;
+1: anode=8'b10111111;
+2: anode=8'b11101111;
+3: anode=8'b11110111;
+4: anode=8'b11111101;
+5: anode=8'b11111110;
+default: anode=8'b11111111;
+endcase
+end
+endmodule
+
+module display_cathode(digit,cathode);
+input [3:0]digit;
+output reg [7:0]cathode;
+always@(digit)
+begin
+case(digit)
+0: cathode=8'b00000010;
+1: cathode=8'b00111110;
+2: cathode=8'b00100100;
+3: cathode=8'b00001100;
+4: cathode=8'b10011000;
+5: cathode=8'b01001000;
+6: cathode=8'b01000000;
+7: cathode=8'b00011110;
+8: cathode=8'b00000000;
+8: cathode=8'b00001000;
+default: cathode=8'b00000010;
+endcase
+end
+endmodule
+
+
+module mux(in1,in2,sel,y);
+input [6:0]in1,in2;
+input sel;
+output reg [6:0]y;
+always@*
+begin
+y=sel?in2:in1;
+end
+endmodule
+
+module refresh_counter(clk,rst,ref);
+input clk,rst;
+output reg[2:0]ref;
+always@(posedge clk)
+begin
+if(rst || (ref==5)) ref<=3'd0;
+else ref<=ref+1;
+end
+initial ref<=3'd0;
+endmodule
+
+module register(clk,rst,load,in,out);
+input [6:0]in;
+input clk,rst,load;
+output reg [6:0]out;
+always@(posedge clk)
+begin
+if(load) out<=in;
+else if(rst) out<=8'd0;
+end
+endmodule
+
+module subtractor(in1,in2,sub);
+input [6:0]in1,in2;
+output reg [6:0]sub;
+always@*
+begin
+sub=in1-in2;
+end
+endmodule
